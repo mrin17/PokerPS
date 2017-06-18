@@ -9,6 +9,8 @@
  * 3) account for max chips a player can win if they all in
  * 4) arguments for initial chip count, big/small blind (add a maximum!)
  * 5) enforce max players of 8
+ * 6) leaderboards!
+ * 7) .leave option
  */
 
 'use strict';
