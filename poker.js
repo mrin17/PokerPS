@@ -2,6 +2,13 @@
  * Poker Game for Pokemon Showdown
  * Originally intended for use with Sparkychild's Bot
  * Code by Kant Ketchum
+ *
+ * TODOS
+ * 1) big/little blinds and rotating people who start
+ * 2) account for high card
+ * 3) account for max chips a player can win if they all in
+ * 4) arguments for initial chip count, big/small blind (add a maximum!)
+ * 5) enforce max players of 8
  */
 
 'use strict';
