@@ -6,7 +6,7 @@
  * TODOS
  * 1) big/little blinds and rotating people who start
  * 3) account for max chips a player can win if they all in
- * 4) arguments for initial chip count, big/small blind (add a maximum!)
+ * 4) arguments for big/small blind (add a maximum!)
  * 5) enforce max players of 8 or 10
  * 6) leaderboards!
  * 7) .leave option
@@ -30,12 +30,13 @@ const symbols = {
 const hands=["High Card", "1 Pair", "2 Pair", "3 of a Kind", "Straight", 
              "Flush", "Full House", "4 of a Kind", "Straight Flush", "Royal Flush"];
 const handRankings=[7, 8, 4, 5, 0, 1, 2, 9, 3, 6];
-const startingChipCount = 50;
+const defaultStartingChipCount = 50;
 const startingBuyIn = 2;
 const houseRakePerPlayerPerRound = 1;
+let startingChipCount = defaultStartingChipCount;
 
 class PokerGame extends Rooms.botGame {
-    constructor(room) {
+    constructor(room, amount) {
         super(room);
         
         this.currentPlayer = null;
@@ -329,7 +330,7 @@ class PokerGame extends Rooms.botGame {
         this.sendRoom("Game is over! " + winnerName + " wins!");
         this.destroy();
     }
-    
+
     eliminate (userid) {
         userid = userid || this.currentPlayer;
         //remove players
@@ -555,6 +556,11 @@ exports.commands = {
     poker: function (target, room, user) {
         if (!room || !this.can("games")) return false;
         if(room.game) return this.send("There is already a game going on in this room! (" + room.game.gameName + ")");
+        let amount = parseInt(target);
+        if (isNaN(amount) || amount <= 0 || amount > 400) {
+            amount = defaultStartingChipCount;
+        }
+        startingChipCount = amount;
         room.game = new PokerGame(room);
     },
     fold: function (target, room, user) {
