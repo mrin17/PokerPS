@@ -5,10 +5,9 @@
  *
  * TODOS
  * 1) big/little blinds and rotating people who start
- * 2) account for high card
  * 3) account for max chips a player can win if they all in
  * 4) arguments for initial chip count, big/small blind (add a maximum!)
- * 5) enforce max players of 8
+ * 5) enforce max players of 8 or 10
  * 6) leaderboards!
  * 7) .leave option
  */
@@ -54,8 +53,8 @@ class PokerGame extends Rooms.botGame {
         this.numPlayersAllIn = 0;
         
         this.playerObject = PokerGamePlayer;
-        this.sendRoom("A new game of Poker is starting. " + this.command("join") + " to join the game. Brought to you by Kant Ketchum.");
-        this.sendRoom("Some important things I didn't add yet to this version of Poker: (1) No rotating blinds, everyone buys in. (2) Only type of hand matters, every 1 Pair is equal.(3) Everyone who wins a pot splits it evenly.");
+        this.sendRoom("A new game of Poker is starting. " + this.command("join") + " to join the game.");
+        this.sendRoom("Some important things I didn't add yet to this version of Poker: (1) No rotating blinds, everyone buys in. (2) Everyone who wins a pot splits it evenly.");
     }
 
     command(cmd) {
@@ -271,18 +270,28 @@ class PokerGame extends Rooms.botGame {
     onRoundEnd() {
         // sum up players
         let winningPlayers = [];
-        let currentBest = 0;
+        let currentBestRankThenKickers = [-1, [-1]];
         for(var p in this.users) {
             if(!this.users[p].folded) {
-                let val = this.users[p].getHandValue(this.cards);
+                let rankThenKickers = this.users[p].getHandValue(this.cards);
                 let cardText = this.users[p].hand.map((c) => "[" + symbols[c.type] + faces[c.value] + "]").join(" ");
-                this.sendRoom(this.users[p].name + " has " + cardText + ": " + hands[val] + ".");
-                if (val > currentBest) {
+                let kickerText = rankThenKickers[1].map((rank) => faces[rank]).join(" ");
+                this.sendRoom(this.users[p].name + " has " + cardText + ": " + hands[rankThenKickers[0]] + ", " + kickerText + ".");
+                if (rankThenKickers[0] > currentBestRankThenKickers[0]) {
                     winningPlayers = [];
                     winningPlayers.push(this.users[p]);
-                    currentBest = val;
-                } else if (val == currentBest) {
+                    currentBestRankThenKickers = rankThenKickers;
+                } else if (rankThenKickers[0] == currentBestRankThenKickers[0]) {
+                    // push them beforehand because why not, it'll get overwritten if they lose
                     winningPlayers.push(this.users[p]);
+                    for (var i = 0; i < rankThenKickers[1].length; i++) {
+                        if (currentBestRankThenKickers[1][i] < rankThenKickers[1][i]) {
+                            winningPlayers = [];
+                            winningPlayers.push(this.users[p]);
+                            currentBestRankThenKickers = rankThenKickers;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -354,8 +363,8 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         // build hand
         let hand = this.hand.sort((a, b) => {
             // sort by value first
-            if(values.indexOf(a.value) > values.indexOf(b.value)) return 1;
-            if(values.indexOf(a.value) < values.indexOf(b.value)) return -1;
+            if(a.value > b.value) return -1;
+            if(a.value < b.value) return 1;
             // if values are the same, sort by suit
             if(cardTypes.indexOf(a.type) > cardTypes.indexOf(b.type)) return 1;
             return -1;
@@ -397,7 +406,7 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
       }  
       v = v % 15 - ((s/(s&-s) == 31) || (s == 0x403c) ? 3 : 1);
       v -= (cardBitTypes[cards[0].type] == (cardBitTypes[cards[1].type]|cardBitTypes[cards[2].type]|cardBitTypes[cards[3].type]|cardBitTypes[cards[4].type])) * ((s == 0x7c00) ? -5 : 1);
-      console.log("Hand: " + this.cardString(cards) + ": " + handRankings[v]);
+      //console.log("Hand: " + this.cardString(cards) + ": " + handRankings[v]);
       return v;
     }
     
@@ -427,11 +436,12 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
     	//deck.push();
         // manually go through all 21 possibilities
         // currently no differentiation between the values of the cards
+        let KICKER_SEARCH = true;
         let realHand = this.hand.concat(cards);
         let cardIndices = [4, 3, 2, 1, 0];
         let indexToIncrement = 0;
         let bestHand = [];
-        let bestVal = -1;
+        let bestRank = -1;
         let done = false;
         while (!done) {
         	let hand = [realHand[cardIndices[0]], 
@@ -439,12 +449,21 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         	            realHand[cardIndices[2]], 
         	            realHand[cardIndices[3]], 
         	            realHand[cardIndices[4]]];
-        	let value = handRankings[this.rankPokerHand(hand)];
-        	console.log("Hand: " + this.cardString(hand) + ": " + value);
-        	if (value > bestVal) {
+        	let value = handRankings[this.rankPokerHand(hand)]; 
+            // TODO - account for kickers!!!!!!!!
+        	if (value > bestRank) {
         		bestHand = hand;
-        		bestVal = value;
-        	}
+        		bestRank = value;
+        	} else if (value == bestRank && KICKER_SEARCH) {
+                let kickers1 = this.getKickers(bestHand, value);
+                let kickers2 = this.getKickers(hand, value);
+                for (var i = 0; i < kickers1.length; i++) {
+                    if (kickers1[i] < kickers2[i]) {
+                        bestHand = hand;
+                        break;
+                    }
+                }
+            }
         	cardIndices[indexToIncrement] = cardIndices[indexToIncrement] + 1;
         	while (cardIndices[indexToIncrement] > realHand.length - indexToIncrement - 1) {
         		indexToIncrement++;
@@ -459,8 +478,72 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         		indexToIncrement--;
         	}
         }
-        console.log("Best Hand: " + bestHand[0].value + ", " + bestHand[1].value + ", " + bestHand[2].value + ", " + bestHand[3].value + ", " + bestHand[4].value);
-        return bestVal;
+        let kickers = this.getKickers(bestHand, bestRank);
+        //console.log("Best Hand: " + bestHand[0].value + ", " + bestHand[1].value + ", " + bestHand[2].value + ", " + bestHand[3].value + ", " + bestHand[4].value);
+        return [bestRank, kickers];
+    }
+
+    getKickers(winningHand, rank) {
+        let sortedHand = winningHand.sort((a, b) => {
+            // sort by value first
+            if(a.value > b.value) return -1;
+            if(a.value < b.value) return 1;
+            return -1;
+        });
+        // High Card, Flush, Royal Flush - take highest card
+        // 1 Pair, 3 of a kind, 4 of a kind - take highest duplicated card
+        // 2 Pair - take two highest duplicated cards
+        // Straight, Straight Flush - take highest card unless its a low ace
+        // Full House - push the 3 of a kind first, then the two of a kind
+        if (rank == 0 || rank == 5 || rank == 9) {
+            return [sortedHand[0].value, sortedHand[1].value, sortedHand[2].value, sortedHand[3].value, sortedHand[4].value];
+        } else if (rank == 1 || rank == 3 || rank == 7) {
+            let winners = [];
+            let rest = [];
+            for (var i = 0; i < sortedHand.length; i++) {
+                if (winners.length > 0) {
+                    if (sortedHand[i].value == winners[0]) {
+                        winners.push(sortedHand[i].value);
+                    } else {
+                        rest.push(sortedHand[i].value);
+                    }
+                } else {
+                    if (sortedHand[i].value == sortedHand[i+1].value) {
+                        winners.push(sortedHand[i].value);
+                    } else {
+                        rest.push(sortedHand[i].value);
+                    }
+                }
+                
+            }
+            return winners.concat(rest);
+        } else if (rank == 2) {
+            let winners = [];
+            let rest = [];
+            for (var i = 0; i < sortedHand.length; i++) {
+                if (i < sortedHand.length - 1 && sortedHand[i].value == sortedHand[i+1].value) {
+                    winners.push(sortedHand[i].value);
+                    winners.push(sortedHand[i+1].value);
+                    i++;
+                } else {
+                    rest.push(sortedHand[i].value);
+                }
+            }
+            return winners.concat(rest);
+        } else if (rank == 4 || rank == 8) {
+            if (sortedHand[0].value == 14 && sortedHand[1].value == 5) {
+                return [sortedHand[1].value, sortedHand[2].value, sortedHand[3].value, sortedHand[4].value, sortedHand[0].value];
+            } else {
+                return [sortedHand[0].value, sortedHand[1].value, sortedHand[2].value, sortedHand[3].value, sortedHand[4].value];
+            }
+        } else if (rank == 6) {
+            if (sortedHand[0].value == sortedHand[2].value) {
+                return [sortedHand[0].value, sortedHand[1].value, sortedHand[2].value, sortedHand[3].value, sortedHand[4].value];
+            } else {
+                return [sortedHand[4].value, sortedHand[3].value, sortedHand[2].value, sortedHand[1].value, sortedHand[0].value];
+            }
+        }
+        return [0, 0, 0, 0, 0];
     }
 
     cardString(cards) {
