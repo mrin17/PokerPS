@@ -6,7 +6,7 @@
  * TODOS
  * 1) big/little blinds and rotating people who start
  * 3) account for max chips a player can win if they all in
- * 4) arguments for big/small blind (add a maximum!)
+ * 4) arguments for initial chip count, big/small blind (add a maximum!)
  * 5) enforce max players of 8 or 10
  * 6) leaderboards!
  * 7) .leave option
@@ -56,6 +56,7 @@ class PokerGame extends Rooms.botGame {
         this.playerObject = PokerGamePlayer;
         this.sendRoom("A new game of Poker is starting. " + this.command("join") + " to join the game.");
         this.sendRoom("Some important things I didn't add yet to this version of Poker: (1) No rotating blinds, everyone buys in. (2) Everyone who wins a pot splits it evenly.");
+        this.sendRoom("Commmands: (" + this.command("fold") + ", " + this.command("check") + ", " + this.command("call") + ", " + this.command("raise X") + ")");
     }
 
     command(cmd) {
@@ -110,7 +111,9 @@ class PokerGame extends Rooms.botGame {
         });
         // if everyone isn't buying in, dont do this
         this.bet = 0;
-        this.houseRake();
+        let totalRake = houseRakePerPlayerPerRound * this.userList.length;
+        this.pot = this.pot - totalRake;
+        this.sendRoom("Everyone buys in with " + startingBuyIn + " chips each. House rakes " + totalRake + ", pot is " + this.pot + ".");
         this.setNextPlayer();
         this.initTurn();
     }
@@ -121,7 +124,7 @@ class PokerGame extends Rooms.botGame {
         if (chips === 0) {
             this.onTurnEnd(player);
         } else {
-            this.sendRoom(player.name + "'s turn. " + this.pot + " in pot, " + this.bet + " to call. You have " + chips + " chips. (" + this.command("fold") + ", " + this.command("call") + ", " + this.command("raise X") + ")");
+            this.sendRoom(player.name + "'s turn (((" + chips + " chips)))  " + this.bet + " to call.");
             this.timer = setTimeout(() => {
                 this.users[this.currentPlayer].folded = true;
                 this.playersRemaining = this.playersRemaining - 1;
@@ -139,27 +142,32 @@ class PokerGame extends Rooms.botGame {
         let player = this.users[userid];
         player.receiveCard(card);
     }
-
-    houseRake() {
-        let totalRake = houseRakePerPlayerPerRound * this.userList.length;
-        this.pot = this.pot - totalRake;
-        this.sendRoom("House rakes in " + totalRake + ". Pot is " + this.pot + ".");
-    }
     
     onFold (user) {
         if (this.state !== "started" || user.userid !== this.currentPlayer) return false;
         let player = this.users[user.userid];
+        player.folded = true;
         this.sendRoom(player.name + " has folded.");
         this.playersRemaining = this.playersRemaining - 1;
         this.onTurnEnd(user);
     }
 
     onBuyIn(player, userid) {
-        this.addChipsToPot(player, userid, startingBuyIn, "bought in");
+        this.addChipsToPot(player, userid, startingBuyIn, "");
     }
 
     onCall (user) {
+        if (this.state !== "started" || user.userid !== this.currentPlayer) return false;
         this.putChipsInPot(user, this.bet, "called");
+    }
+
+    onCheck (user) {
+        if (this.state !== "started" || user.userid !== this.currentPlayer) return false;
+        if (this.bet !== 0) {
+            this.sendRoom("You cannot check because someone raised, you must either call or raise.");
+        } else {
+           this.putChipsInPot(user, this.bet, "called"); 
+        }
     }
 
     onBet (user, amount) {
@@ -192,13 +200,20 @@ class PokerGame extends Rooms.botGame {
         if (player.chips == 0) {
         	this.numPlayersAllIn++;
         }
-        this.sendRoom(player.name + " has " + action + " with " + betChips + ". They have " + player.chips + " chips remaining. Pot is " + this.pot + ".");
+        if (action !== "") {
+            if (player.chips == 0) {
+                this.sendRoom(player.name + " is ALL IN!");
+            } else {
+                this.sendRoom(player.name + " has " + player.chips + " chips remaining.");
+            }
+            this.sendRoom("POT: " + this.pot + " chips");
+        }
     }
     
     onTurnEnd (user) {
         if (this.state !== "started" || (user && user.userid !== this.currentPlayer)) return false;
         clearTimeout(this.timer);
-        let foundPlayer = this.searchForAndSetNextPlayer(user);
+        let foundPlayer = this.searchForAndSetNextPlayer();
         if (!foundPlayer) {
             this.newHand();
         } else {
@@ -213,7 +228,7 @@ class PokerGame extends Rooms.botGame {
         }
     }
 
-    searchForAndSetNextPlayer(user) {
+    searchForAndSetNextPlayer() {
         let count = this.userList.length;
         // find next player who hasn't folded
         while (!this.setNextPlayer()) {
@@ -283,15 +298,19 @@ class PokerGame extends Rooms.botGame {
                     winningPlayers.push(this.users[p]);
                     currentBestRankThenKickers = rankThenKickers;
                 } else if (rankThenKickers[0] == currentBestRankThenKickers[0]) {
-                    // push them beforehand because why not, it'll get overwritten if they lose
-                    winningPlayers.push(this.users[p]);
-                    for (var i = 0; i < rankThenKickers[1].length; i++) {
+                    let shouldAdd = true;
+                    for (var i = 0; i < currentBestRankThenKickers[1].length; i++) {
                         if (currentBestRankThenKickers[1][i] < rankThenKickers[1][i]) {
                             winningPlayers = [];
-                            winningPlayers.push(this.users[p]);
-                            currentBestRankThenKickers = rankThenKickers;
+                            break;
+                        } else if (currentBestRankThenKickers[1][i] > rankThenKickers[1][i]) {
+                            shouldAdd = false;
                             break;
                         }
+                    }
+                    if (shouldAdd) {
+                        winningPlayers.push(this.users[p]);
+                        currentBestRankThenKickers = rankThenKickers;
                     }
                 }
             }
@@ -302,13 +321,14 @@ class PokerGame extends Rooms.botGame {
     playersWin(winningPlayers) {
     	let list = winningPlayers.map((f) => f.name).sort().join(", ");
         let chipVal = this.pot / winningPlayers.length;
-        this.sendRoom("Hand over. Winners: " + list  + ". They each win " + chipVal + " chips.");
+        this.sendRoom("Hand over. WINNERS: " + list  + ".   + " + chipVal + " chips each.");
         winningPlayers.map((f) => { f.chips = f.chips + chipVal});
         // check if anyone has 0 chips
         this.checkForLosers();
         if (this.userList.length == 1) {
             this.onEnd(list);
         } else {
+            this.searchForAndSetNextPlayer();
         	this.newHand();
         }
     }
@@ -462,6 +482,8 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
                     if (kickers1[i] < kickers2[i]) {
                         bestHand = hand;
                         break;
+                    } else if (kickers1[i] > kickers2[i]) {
+                        break;
                     }
                 }
             }
@@ -570,6 +592,10 @@ exports.commands = {
     call: function (target, room, user) {
         if (!room || !room.game || room.game.gameId !== "poker") return false;
         room.game.onCall(user);        
+    },
+    check: function (target, room, user) {
+        if (!room || !room.game || room.game.gameId !== "poker") return false;
+        room.game.onCheck(user);        
     },
     raise: function (target, room, user) {
         if (!room || !room.game || room.game.gameId !== "poker") return false;
