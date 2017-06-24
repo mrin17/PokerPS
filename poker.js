@@ -4,9 +4,7 @@
  * Code by Kant Ketchum
  *
  * TODOS
- * 1) big/little blinds and rotating people who start
- * 3) account for max chips a player can win if they all in
- * 4) arguments for initial chip count, big/small blind (add a maximum!)
+ * 1) make Big Blind player get another chance
  * 5) enforce max players of 8 or 10
  * 6) leaderboards!
  * 7) .leave option
@@ -31,7 +29,7 @@ const hands=["High Card", "1 Pair", "2 Pair", "3 of a Kind", "Straight",
              "Flush", "Full House", "4 of a Kind", "Straight Flush", "Royal Flush"];
 const handRankings=[7, 8, 4, 5, 0, 1, 2, 9, 3, 6];
 const defaultStartingChipCount = 50;
-const startingBuyIn = 2;
+const startingBuyIn = 1;
 const houseRakePerPlayerPerRound = 1;
 let startingChipCount = defaultStartingChipCount;
 
@@ -48,6 +46,7 @@ class PokerGame extends Rooms.botGame {
         this.dealer = new PokerGamePlayer({name: "Poker"});
         this.pot = 0;
         this.userIDWhoLastBet = 0;
+        this.nextSmallBlindPlayer = "";
         this.cards = [];
         this.playersRemaining = 0;
         this.numPlayersAllIn = 0;
@@ -87,14 +86,18 @@ class PokerGame extends Rooms.botGame {
         this.pot = 0;
         this.userIDWhoLastBet = '';
         this.cards = [];
+        this.amountsPlayersBet = [];
         this.playersRemaining = this.userList.length;
         this.numPlayersAllIn = 0;
 
         //everyone rejoins hand
         this.userList.forEach((u) => {
-            if (this.userIDWhoLastBet === '') {
+            if (this.firstSetup) {
                 this.userIDWhoLastBet = toId(u);
+                this.nextSmallBlindPlayer = toId(u);
+                this.firstSetup = false;
             }
+            this.currentPlayer = toId(u);
         	let player = this.users[toId(u)];
             this.amountsPlayersBet[toId(u)] = 0;
         	player.newHand();
@@ -110,18 +113,30 @@ class PokerGame extends Rooms.botGame {
         this.userList.forEach((u) => { 
         	let player = this.users[toId(u)];
         	player.sendHand();
-            //everyone buys in for now
-            this.onBuyIn(player, toId(u));
         });
+        this.triggerBuyIn();
         // if everyone isn't buying in, dont do this
-        let totalRake = houseRakePerPlayerPerRound * this.userList.length;
-        this.pot = this.pot - totalRake;
-        this.sendRoom("Everyone buys in with " + startingBuyIn + " chips each. House rakes " + totalRake + ", pot is " + this.pot + ".");
-        if (this.firstSetup) {
-            this.firstSetup = false;
-            this.setNextPlayer();
-        }
+        //let totalRake = houseRakePerPlayerPerRound * this.userList.length;
+        //this.pot = this.pot - totalRake;
         this.initTurn();
+    }
+
+    triggerBuyIn() {
+        // SEARCH FOR USER IN LIST
+        var len = this.userList.length;
+        while (len > 0 && this.currentPlayer != this.nextSmallBlindPlayer) {
+            this.setNextPlayer();
+            len--;
+        }
+        var p1 = this.currentPlayer;
+        this.setNextPlayer();
+        var p2 = this.currentPlayer;
+        this.onBuyIn(this.users[p1], startingBuyIn, p1);
+        this.onBuyIn(this.users[p2], startingBuyIn * 2, p2);
+        this.nextSmallBlindPlayer = p2;
+        this.sendRoom("BLINDS: " + this.users[p1].name + " (" + startingBuyIn + "), " + this.users[p2].name + " (" + startingBuyIn * 2 + ")");
+        this.setNextPlayer();
+        this.sendRoom("POT: " + this.pot);
     }
     
     initTurn () {
@@ -144,7 +159,11 @@ class PokerGame extends Rooms.botGame {
     }
 
     getNumToCall(userid) {
-        return this.amountsPlayersBet[this.userIDWhoLastBet] - this.amountsPlayersBet[userid];
+        if (this.amountsPlayersBet[this.userIDWhoLastBet] === undefined) {
+            return 0;
+        } else {
+            return this.amountsPlayersBet[this.userIDWhoLastBet] - this.amountsPlayersBet[userid];
+        }
     }
     
     giveCard (userid) {
@@ -163,8 +182,8 @@ class PokerGame extends Rooms.botGame {
         this.onTurnEnd(user);
     }
 
-    onBuyIn(player, userid) {
-        this.addChipsToPot(player, userid, startingBuyIn, "");
+    onBuyIn(player, amount, userid) {
+        this.addChipsToPot(player, userid, amount, "");
     }
 
     onCall (user) {
@@ -231,7 +250,7 @@ class PokerGame extends Rooms.botGame {
         } else {
             // if there's one left, end round. If we are all square, flop, otherwise keep going
             if (this.playersRemaining == 1) {
-                this.playersWin([this.users[this.currentPlayer]]);   
+                this.playersWin([[this.users[this.currentPlayer]]]);   
             } else if (this.currentPlayer === this.userIDWhoLastBet) {
                 this.flop();
             } else {
@@ -296,33 +315,51 @@ class PokerGame extends Rooms.botGame {
 
     onRoundEnd() {
         // sum up players
+        // An array of arrays of users
+        // [[Player:kantketchum, Player:fearthelee], [Player:seoking]] means kant and lee tied the hand and seo was in 2nd
         let winningPlayers = [];
-        let currentBestRankThenKickers = [-1, [-1]];
         for(var p in this.users) {
             if(!this.users[p].folded) {
-                let rankThenKickers = this.users[p].getHandValue(this.cards);
+                this.users[p].setHandValue(this.cards);
+                let rankThenKickers = this.users[p].handValue;
                 let cardText = this.users[p].hand.map((c) => "[" + symbols[c.type] + faces[c.value] + "]").join(" ");
                 let kickerText = rankThenKickers[1].map((rank) => faces[rank]).join(" ");
                 this.sendRoom(this.users[p].name + " has " + cardText + ": " + hands[rankThenKickers[0]] + ", " + kickerText + ".");
-                if (rankThenKickers[0] > currentBestRankThenKickers[0]) {
-                    winningPlayers = [];
-                    winningPlayers.push(this.users[p]);
-                    currentBestRankThenKickers = rankThenKickers;
-                } else if (rankThenKickers[0] == currentBestRankThenKickers[0]) {
-                    let shouldAdd = true;
-                    for (var i = 0; i < currentBestRankThenKickers[1].length; i++) {
-                        if (currentBestRankThenKickers[1][i] < rankThenKickers[1][i]) {
-                            winningPlayers = [];
-                            break;
-                        } else if (currentBestRankThenKickers[1][i] > rankThenKickers[1][i]) {
-                            shouldAdd = false;
-                            break;
+                // go through all indices of winningPlayers, compare to winningPlayers[i][0].handValue
+                // if tied, add to winningPlayers[i]. If better, insert before winningPlayers[i] as new array
+                // if lose, continue
+                // lastly push to the end as new array
+                let added = false;
+                for (var e = 0; e < winningPlayers.length; e++) {
+                    let currentBestRankThenKickers = winningPlayers[e][0].handValue;
+                    if (rankThenKickers[0] > currentBestRankThenKickers[0]) {
+                        winningPlayers.splice(e, 0, [this.users[p]]);
+                        added = true;
+                        e++;
+                        break;
+                    } else if (rankThenKickers[0] == currentBestRankThenKickers[0]) {
+                        let tied = true;
+                        for (var i = 0; i < currentBestRankThenKickers[1].length; i++) {
+                            if (currentBestRankThenKickers[1][i] < rankThenKickers[1][i]) {
+                                winningPlayers.splice(e, 0, [this.users[p]]);
+                                tied = false;
+                                added = true;
+                                e++;
+                                break;
+                                break;
+                            } else if (currentBestRankThenKickers[1][i] > rankThenKickers[1][i]) {
+                                tied = false;
+                                break;
+                            }
+                        }
+                        if (tied) {
+                            winningPlayers[e].push(this.users[p]);
                         }
                     }
-                    if (shouldAdd) {
-                        winningPlayers.push(this.users[p]);
-                        currentBestRankThenKickers = rankThenKickers;
-                    }
+                }
+                if (!added) {
+                    // stupid arrays dont work they just append >.<
+                    winningPlayers.push([this.users[p]]);
                 }
             }
         }
@@ -330,10 +367,41 @@ class PokerGame extends Rooms.botGame {
     }
 
     playersWin(winningPlayers) {
-    	let list = winningPlayers.map((f) => f.name).sort().join(", ");
-        let chipVal = this.pot / winningPlayers.length;
-        this.sendRoom("Hand over. WINNERS: " + list  + ".   + " + chipVal + " chips each.");
-        winningPlayers.map((f) => { f.chips = f.chips + chipVal});
+    	let firstMessage = true;
+        let playerIndex = 0;
+        let totalChipsClaimed = 0;
+        let list = "";
+        //LOOP OVER WINNINGPLAYERS WHILE chipsRemaining > 0
+        while (this.pot > 0 && playerIndex < winningPlayers.length) {
+            let chipsTheyCanWin = winningPlayers[playerIndex].map((f) => this.getMostChipsPlayerCanWin(f.user.userid) - totalChipsClaimed);
+            let minValue = chipsTheyCanWin.sort((a, b) => {return a < b;})[0];
+            while (minValue > 0) {
+                this.pot -= minValue;
+                totalChipsClaimed += minValue;
+                let winnings = minValue / winningPlayers[playerIndex].length;
+                list = winningPlayers[playerIndex].map((f) => f.name).sort().join(", ");
+                let potText = firstMessage ? "Hand over. WINNERS: " : "Side Pot: ";
+                firstMessage = false;
+                this.sendRoom(potText + list  + ".   + " + winnings + " chips each.");
+                winningPlayers[playerIndex].map((f) => { f.chips = f.chips + winnings});
+                // REMOVE PLAYERS WHO HAVE 0 TO WIN
+                for (var i = 0; i < chipsTheyCanWin.length; i++) {
+                    chipsTheyCanWin[i] -= minValue;
+                    if (chipsTheyCanWin[i] <= 0) {
+                        chipsTheyCanWin.splice(i, 1);
+                        winningPlayers[playerIndex].splice(i, 1);
+                        i--;
+                    }
+                }
+                // reset minValue
+                if (chipsTheyCanWin.length == 0) {
+                    minValue = 0;
+                } else {
+                    minValue = chipsTheyCanWin.sort((a, b) => {return a < b;})[0];
+                }
+            }
+            playerIndex++;
+        }
         // check if anyone has 0 chips
         this.checkForLosers();
         if (this.userList.length == 1) {
@@ -341,6 +409,18 @@ class PokerGame extends Rooms.botGame {
         } else {
         	this.newHand();
         }
+    }
+
+    getMostChipsPlayerCanWin(userid) {
+        let totalChips = 0;
+        for (var p in this.users) {
+            if (this.amountsPlayersBet[p] <= this.amountsPlayersBet[userid]) {
+                totalChips += this.amountsPlayersBet[p];
+            } else {
+                totalChips += this.amountsPlayersBet[userid];
+            }
+        }
+        return totalChips;
     }
 
     checkForLosers() {
@@ -388,6 +468,7 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         this.folded = false;
         this.chips = startingChipCount;
         this.value = 0;
+        this.handValue = [];
     }
     
     sendHand () {
@@ -407,7 +488,7 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         let bet = numChips;
         if (this.chips < bet) {
             bet = this.chips;
-            // ALL IN TRIGGER - idk what to do here
+            // ALL IN TRIGGER
         }
         this.chips = this.chips - bet;
         return bet;
@@ -437,33 +518,10 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
       }  
       v = v % 15 - ((s/(s&-s) == 31) || (s == 0x403c) ? 3 : 1);
       v -= (cardBitTypes[cards[0].type] == (cardBitTypes[cards[1].type]|cardBitTypes[cards[2].type]|cardBitTypes[cards[3].type]|cardBitTypes[cards[4].type])) * ((s == 0x7c00) ? -5 : 1);
-      //console.log("Hand: " + this.cardString(cards) + ": " + handRankings[v]);
       return v;
     }
     
-    /*
-    rankPokerHand(cards) {
-      var v, i, o, s = 1<<cards[0].value|1<<cards[1].value|1<<cards[2].value|1<<cards[3].value|1<<cards[4].value|1<<cards[5].value|1<<cards[6].value;
-      for (i=0, v=o=0; i<cards.length; i++) {
-      	v += o*((v/o&15)+1);
-      	o=Math.pow(2,cards[i].value*4);
-      }
-      v = v % 15 - ((s/(s&-s) == 31) || (s == 0x403c) ? 3 : 1);
-      var suits = [0, 0, 0, 0];
-      for (var card in cards) {
-        suits[card.type]++;
-      }
-      v -= (suits[0] >= 5 || suits[1] >= 5 || suits[2] >= 5 || suits[3] >= 5) * ((s == 0x7c00) ? -5 : 1);
-      return v;
-    }
-    */
-    /*
-    getHandValue (cards) {
-        let realHand = this.hand.concat(cards);
-        return handRankings[this.rankPokerHand(realHand)];
-    }
-	*/
-    getHandValue (cards) {
+    setHandValue (cards) {
     	//deck.push();
         // manually go through all 21 possibilities
         // currently no differentiation between the values of the cards
@@ -513,7 +571,7 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         }
         let kickers = this.getKickers(bestHand, bestRank);
         //console.log("Best Hand: " + bestHand[0].value + ", " + bestHand[1].value + ", " + bestHand[2].value + ", " + bestHand[3].value + ", " + bestHand[4].value);
-        return [bestRank, kickers];
+        this.handValue = [bestRank, kickers];
     }
 
     getKickers(winningHand, rank) {
