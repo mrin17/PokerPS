@@ -51,6 +51,7 @@ class PokerGame extends Rooms.botGame {
         this.playersRemaining = 0;
         this.numPlayersAllIn = 0;
         this.amountsPlayersBet = [];
+        this.highestBet = 0;
         this.firstSetup = true;
         
         this.playerObject = PokerGamePlayer;
@@ -85,6 +86,7 @@ class PokerGame extends Rooms.botGame {
         this.shuffleDeck();
         this.pot = 0;
         this.userIDWhoLastBet = '';
+        this.highestBet = 0;
         this.cards = [];
         this.amountsPlayersBet = [];
         this.playersRemaining = this.userList.length;
@@ -136,6 +138,7 @@ class PokerGame extends Rooms.botGame {
         this.nextSmallBlindPlayer = p2;
         this.sendRoom("BLINDS: " + this.users[p1].name + " (" + startingBuyIn + "), " + this.users[p2].name + " (" + startingBuyIn * 2 + ")");
         this.setNextPlayer();
+        this.userIDWhoLastBet = this.currentPlayer; // so the big blind can choose to call or not
         this.sendRoom("POT: " + this.pot);
     }
     
@@ -159,11 +162,7 @@ class PokerGame extends Rooms.botGame {
     }
 
     getNumToCall(userid) {
-        if (this.amountsPlayersBet[this.userIDWhoLastBet] === undefined) {
-            return 0;
-        } else {
-            return this.amountsPlayersBet[this.userIDWhoLastBet] - this.amountsPlayersBet[userid];
-        }
+        return this.highestBet - this.amountsPlayersBet[userid];
     }
     
     giveCard (userid) {
@@ -223,10 +222,12 @@ class PokerGame extends Rooms.botGame {
 
     addChipsToPot(player, userid, chips, action) {
         let betChips = player.bet(chips);
-        if (chips > this.getNumToCall(userid)) {
-            this.userIDWhoLastBet = userid;
-        }
+        let numToCall = this.getNumToCall(userid);
         this.amountsPlayersBet[userid] += betChips;
+        if (betChips > numToCall) {
+            this.userIDWhoLastBet = userid;
+            this.highestBet = this.amountsPlayersBet[userid];
+        }
         this.pot = this.pot + betChips;
         if (player.chips == 0) {
         	this.numPlayersAllIn++;
