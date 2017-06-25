@@ -4,7 +4,6 @@
  * Code by Kant Ketchum
  *
  * TODOS
- * 1) make Big Blind player get another chance
  * 5) enforce max players of 8 or 10
  * 6) leaderboards!
  * 7) .leave option
@@ -47,6 +46,7 @@ class PokerGame extends Rooms.botGame {
         this.pot = 0;
         this.userIDWhoLastBet = 0;
         this.nextSmallBlindPlayer = "";
+        this.currentSmallBlindPlayer = "";
         this.cards = [];
         this.playersRemaining = 0;
         this.numPlayersAllIn = 0;
@@ -96,6 +96,7 @@ class PokerGame extends Rooms.botGame {
             if (this.firstSetup) {
                 this.userIDWhoLastBet = toId(u);
                 this.nextSmallBlindPlayer = toId(u);
+                this.currentSmallBlindPlayer = toId(u);
                 this.firstSetup = false;
             }
             this.currentPlayer = toId(u);
@@ -123,22 +124,27 @@ class PokerGame extends Rooms.botGame {
     }
 
     triggerBuyIn() {
-        // SEARCH FOR USER IN LIST
-        var len = this.userList.length;
-        while (len > 0 && this.currentPlayer != this.nextSmallBlindPlayer) {
-            this.setNextPlayer();
-            len--;
-        }
+        this.seekForPlayer(this.nextSmallBlindPlayer);
         var p1 = this.currentPlayer;
+        this.currentSmallBlindPlayer = p1;
         this.setNextPlayer();
         var p2 = this.currentPlayer;
+        this.nextSmallBlindPlayer = p2;
         this.onBuyIn(this.users[p1], startingBuyIn, p1);
         this.onBuyIn(this.users[p2], startingBuyIn * 2, p2);
-        this.nextSmallBlindPlayer = p2;
         this.sendRoom("BLINDS: " + this.users[p1].name + " (" + startingBuyIn + "), " + this.users[p2].name + " (" + startingBuyIn * 2 + ")");
         this.setNextPlayer();
         this.userIDWhoLastBet = this.currentPlayer; // so the big blind can choose to call or not
         this.sendRoom("POT: " + this.pot);
+    }
+
+    seekForPlayer(user) {
+        // SEARCH FOR USER IN LIST
+        var len = this.userList.length;
+        while (len > 0 && this.currentPlayer != user) {
+            this.setNextPlayer();
+            len--;
+        }
     }
     
     initTurn () {
@@ -309,6 +315,14 @@ class PokerGame extends Rooms.botGame {
         if (this.playersRemaining - this.numPlayersAllIn == 1) {
         	this.flop();
         } else {
+            // weird rule where if there are 2 players left, big blind player starts bets after flops
+            // otherwise, it's the small blind player
+            if (this.userList.length === 2) {
+                this.seekForPlayer(this.nextSmallBlindPlayer);
+            } else {
+                this.seekForPlayer(this.currentSmallBlindPlayer);
+            }
+            this.userIDWhoLastBet = this.currentPlayer;
         	this.initTurn();
         }
     }
