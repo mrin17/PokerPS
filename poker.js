@@ -145,6 +145,14 @@ class PokerGame extends Rooms.botGame {
             this.setNextPlayer();
             len--;
         }
+
+        if (this.users[this.currentPlayer].folded) {
+        	len = this.userList.length;
+        	while (!this.setNextPlayer()) {
+				len--;
+        	}
+        }
+
     }
     
     initTurn () {
