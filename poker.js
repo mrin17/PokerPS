@@ -53,6 +53,7 @@ class PokerGame extends Rooms.botGame {
         this.amountsPlayersBet = [];
         this.highestBet = 0;
         this.firstSetup = true;
+        this.losersList = [];
         
         this.playerObject = PokerGamePlayer;
         this.sendRoom("A new game of Poker is starting. " + this.command("join") + " to join the game.");
@@ -152,7 +153,6 @@ class PokerGame extends Rooms.botGame {
 				len--;
         	}
         }
-
     }
     
     initTurn () {
@@ -268,6 +268,10 @@ class PokerGame extends Rooms.botGame {
             } else if (this.currentPlayer === this.userIDWhoLastBet) {
                 this.flop();
             } else {
+                // if the user folded and they were the ones who last bet, then we set userIDWhoLastBet to the new current player
+                if (this.users[user.userid].folded && user.userid == this.userIDWhoLastBet) {
+                    this.userIDWhoLastBet = this.currentPlayer;
+                }
                 this.initTurn();
             }
         }
@@ -459,16 +463,24 @@ class PokerGame extends Rooms.botGame {
     }
     
     onEnd (winnerName) {
-        this.sendRoom("Game is over! " + winnerName + " wins!");
+        if (winnerName === undefined) {
+            this.sendRoom("Game is over! Nobody wins!");
+        } else {
+            this.sendRoom("Game is over! " + winnerName + " wins!");
+            for (var i = 0; i < this.losersList.length; i++) {
+                this.sendRoom("(" + (i + 2) + ") " + this.losersList[i]);
+            }
+        }
         this.destroy();
     }
 
     eliminate (userid) {
         userid = userid || this.currentPlayer;
+        var name = this.users[userid].name;
         //remove players
         delete this.users[userid];
         this.userList.splice(this.userList.indexOf(userid), 1);
-        
+        this.losersList.splice(0, 0, name);
         if (!this.searchForAndSetNextPlayer()) {
             this.onEnd();
             return false;
