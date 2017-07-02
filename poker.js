@@ -29,6 +29,7 @@ const hands=["High Card", "1 Pair", "2 Pair", "3 of a Kind", "Straight",
 const handRankings=[7, 8, 4, 5, 0, 1, 2, 9, 3, 6];
 const defaultStartingChipCount = 50;
 const startingBuyIn = 1;
+const numTurnsToRaiseBlinds = 15;
 const houseRakePerPlayerPerRound = 1;
 let startingChipCount = defaultStartingChipCount;
 
@@ -54,6 +55,7 @@ class PokerGame extends Rooms.botGame {
         this.highestBet = 0;
         this.firstSetup = true;
         this.losersList = [];
+        this.numTurnsPassed = 0;
         
         this.playerObject = PokerGamePlayer;
         this.sendRoom("A new game of Poker is starting. " + this.command("join") + " to join the game.");
@@ -131,9 +133,11 @@ class PokerGame extends Rooms.botGame {
         this.setNextPlayer();
         var p2 = this.currentPlayer;
         this.nextSmallBlindPlayer = p2;
-        this.onBuyIn(this.users[p1], startingBuyIn, p1);
-        this.onBuyIn(this.users[p2], startingBuyIn * 2, p2);
-        this.sendRoom("BLINDS: " + this.users[p1].name + " (" + startingBuyIn + "), " + this.users[p2].name + " (" + startingBuyIn * 2 + ")");
+        var blindMultiplier = parseInt(this.numTurnsPassed / numTurnsToRaiseBlinds) + 1;
+        var blind = startingBuyIn * blindMultiplier;
+        this.onBuyIn(this.users[p1], blind, p1);
+        this.onBuyIn(this.users[p2], blind * 2, p2);
+        this.sendRoom("BLINDS: " + this.users[p1].name + " (" + blind + "), " + this.users[p2].name + " (" + blind * 2 + ")");
         this.setNextPlayer();
         this.userIDWhoLastBet = this.currentPlayer; // so the big blind can choose to call or not
         this.sendRoom("POT: " + this.pot);
@@ -165,6 +169,7 @@ class PokerGame extends Rooms.botGame {
             this.sendRoom(player.name + "'s turn (((" + chips + " chips)))  " + numToCall + " to call.");
             this.timer = setTimeout(() => {
                 this.users[this.currentPlayer].folded = true;
+                this.sendRoom(player.name + " has taken too long and is disqualified.");
                 this.playersRemaining = this.playersRemaining - 1;
                 if (this.eliminate()) {
                     this.initTurn();
@@ -224,6 +229,11 @@ class PokerGame extends Rooms.botGame {
     	} else {
     		this.putChipsInPot(user, amount, "raised");
     	}
+    }
+
+    onAllIn (user) {
+        if (this.state !== "started" || user.userid !== this.currentPlayer) return false;
+        this.putChipsInPot(user, this.users[user.userid].chips, "...");
     }
 
     putChipsInPot(user, chips, action) {
@@ -404,7 +414,7 @@ class PokerGame extends Rooms.botGame {
             while (minValue > 0) {
                 this.pot -= minValue;
                 totalChipsClaimed += minValue;
-                let winnings = minValue / winningPlayers[playerIndex].length;
+                let winnings = parseInt(minValue / winningPlayers[playerIndex].length);
                 list = winningPlayers[playerIndex].map((f) => f.name).sort().join(", ");
                 let potText = firstMessage ? "Hand over. WINNERS: " : "Side Pot: ";
                 firstMessage = false;
@@ -430,6 +440,12 @@ class PokerGame extends Rooms.botGame {
         }
         // check if anyone has 0 chips
         this.checkForLosers();
+
+        this.numTurnsPassed++;
+        if (this.numTurnsPassed % numTurnsToRaiseBlinds === 0) {
+        	this.sendRoom(numTurnsToRaiseBlinds + " turns have passed! Doubling blinds.");
+        }
+
         if (this.userList.length == 1) {
             this.onEnd(list);
         } else {
@@ -491,6 +507,13 @@ class PokerGame extends Rooms.botGame {
     buildPlayerList () {
         let list = this.userList.map((f) => this.users[f].name).sort().join(", ");
         return "Players (" + this.userList.length + "): " + list;
+    }
+
+    onStacks (user) {
+    	for (var targetUser in this.users) {
+    		let player = this.users[targetUser];
+    		user.sendTo(player.name + ": " + player.chips + " chips.");
+    	}
     }
 }
 
@@ -726,5 +749,21 @@ exports.commands = {
             return this.send("Invalid amount to raise");
         }
         room.game.onBet(user, amount);
+    },
+    allin: function (target, room, user) {
+        if (!room || !room.game || room.game.gameId !== "poker") return false;
+        room.game.onAllIn(user);        
+    },
+    ai: function (target, room, user) {
+        if (!room || !room.game || room.game.gameId !== "poker") return false;
+        room.game.onAllIn(user);        
+    },
+    stacks: function (target, room, user) {
+        if (!room || !room.game || room.game.gameId !== "poker") return false;
+        room.game.onStacks(user);        
+    },
+    s: function (target, room, user) {
+        if (!room || !room.game || room.game.gameId !== "poker") return false;
+        room.game.onStacks(user);        
     },
 };
