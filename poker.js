@@ -59,7 +59,7 @@ class PokerGame extends Rooms.botGame {
         
         this.playerObject = PokerGamePlayer;
         this.sendRoom("A new game of Poker is starting. " + this.command("join") + " to join the game.");
-        this.sendRoom("Commmands: (" + this.command("fold") + ", " + this.command("check") + ", " + this.command("call") + ", " + this.command("raise X") + ")");
+        this.sendRoom("Commmands: (" + this.command("fold") + ", " + this.command("check") + ", " + this.command("call") + ", " + this.command("raise X") + ", " + this.command("allin") + ", " + this.command("stacks") + ")");
     }
 
     command(cmd) {
