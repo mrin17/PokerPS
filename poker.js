@@ -41,6 +41,7 @@ class PokerGame extends Rooms.botGame {
         
         this.currentPlayer = null;
         this.allowJoins = true;
+        this.allowRenames = false;
         this.state = "signups";
         this.gameId = "poker";
         this.gameName = "Poker";
@@ -81,6 +82,12 @@ class PokerGame extends Rooms.botGame {
             }
         }
         user.sendTo("You are not allowed in this game!");
+    }
+
+    onLeave(user) {
+        // nothing, you can't leave...
+        // just wait for your turn and wait 90 seconds
+        user.sendTo("Currently unsupported. Wait for your turn and time out.");
     }
 
     command(cmd) {
