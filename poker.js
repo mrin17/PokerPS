@@ -32,6 +32,8 @@ const startingBuyIn = 1;
 const numTurnsToRaiseBlinds = 15;
 const houseRakePerPlayerPerRound = 1;
 let startingChipCount = defaultStartingChipCount;
+let intendedUserNames = [];
+let usingIntendedNames = false;
 
 class PokerGame extends Rooms.botGame {
     constructor(room, amount) {
@@ -62,6 +64,25 @@ class PokerGame extends Rooms.botGame {
         this.sendRoom("Commmands: (" + this.command("fold") + ", " + this.command("check") + ", " + this.command("call") + ", " + this.command("raise X") + ", " + this.command("allin") + ", " + this.command("stacks") + ")");
     }
 
+    onJoin(user) {
+        if (!this.allowJoins || this.state !== "signups") return;
+        if (this.userList.includes(user.userid)) return user.sendTo("You have already joined!");
+        if (intendedUserNames.length === 0 && !usingIntendedNames) {
+            super.onJoin(user);
+            this.sendRoom(user.name + " has joined the game!");
+            return;
+        }
+        for (var index in intendedUserNames) {
+            if (user.name === intendedUserNames[index]) {
+                super.onJoin(user);
+                this.sendRoom(user.name + " has joined the game!");
+                intendedUserNames.splice(intendedUserNames.indexOf(user.name), 1);
+                return;
+            }
+        }
+        user.sendTo("You are not allowed in this game!");
+    }
+
     command(cmd) {
         return "``" + this.room.commandCharacter[0] + cmd + "``";
     }
@@ -77,6 +98,10 @@ class PokerGame extends Rooms.botGame {
     }
     
     onStart () {
+        if (intendedUserNames.length !== 0) {
+            this.sendRoom("Not everyone has joined yet!");
+            return false;
+        }
         if(this.userList.length < 2 || this.state === "started") return false;
         this.state = "started";
         this.newHand();
@@ -703,7 +728,16 @@ exports.commands = {
     poker: function (target, room, user) {
         if (!room || !this.can("games")) return false;
         if(room.game) return this.send("There is already a game going on in this room! (" + room.game.gameName + ")");
-        let amount = parseInt(target);
+        let args = target.split(',');
+        let amount = parseInt(args[0]);
+        intendedUserNames = [];
+        for (var i = 1; i < args.length; i++) {
+            intendedUserNames.push(args[i].trim());
+        }
+        if (intendedUserNames.length === 1) {
+            return this.send("You can't have only one required player!");
+        }
+        usingIntendedNames = intendedUserNames.length > 1;
         if (isNaN(amount) || amount <= 0 || amount > 400) {
             amount = defaultStartingChipCount;
         }
