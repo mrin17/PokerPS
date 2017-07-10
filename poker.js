@@ -31,6 +31,7 @@ const defaultStartingChipCount = 50;
 const startingBuyIn = 1;
 const numTurnsToRaiseBlinds = 15;
 const houseRakePerPlayerPerRound = 1;
+const strikesToBeOut = 3;
 let startingChipCount = defaultStartingChipCount;
 let intendedUserNames = [];
 let usingIntendedNames = false;
@@ -192,6 +193,7 @@ class PokerGame extends Rooms.botGame {
     }
     
     initTurn () {
+        clearTimeout(this.timer);
         let player = this.users[this.currentPlayer];
         let chips = player.chips;
         let numToCall = this.getNumToCall(this.currentPlayer);
@@ -200,11 +202,15 @@ class PokerGame extends Rooms.botGame {
         } else {
             this.sendRoom(player.name + "'s turn (((" + chips + " chips)))  " + numToCall + " to call.");
             this.timer = setTimeout(() => {
-                this.users[this.currentPlayer].folded = true;
-                this.sendRoom(player.name + " has taken too long and is disqualified.");
-                this.playersRemaining = this.playersRemaining - 1;
-                if (this.eliminate()) {
-                    this.initTurn();
+                if (player.strikes < strikesToBeOut - 1) {
+                    player.strikes++;
+                    this.sendRoom(player.name + " has taken too long! Strikes remaining until disqualification: " + (strikesToBeOut - player.strikes));
+                    this.onFold(player);
+                } else {
+                    player.folded = true;
+                    this.sendRoom(player.name + " has taken too long and is disqualified!");
+                    this.playersRemaining = this.playersRemaining - 1;
+                    this.eliminate();
                 }
             }, 90000);
         }
@@ -299,9 +305,12 @@ class PokerGame extends Rooms.botGame {
     
     onTurnEnd (user) {
         if (this.state !== "started" || (user && user.userid !== this.currentPlayer)) return false;
-        clearTimeout(this.timer);
-        let foundPlayer = this.searchForAndSetNextPlayer();
-        if (!foundPlayer) {
+        let successfulFind = this.searchForAndSetNextPlayer();
+        this.continueGameWithFoundPlayer(user.userid, user.folded, successfulFind);
+    }
+
+    continueGameWithFoundPlayer(userid, folded, successfulFind) {
+        if (!successfulFind) {
             this.newHand();
         } else {
             // if there's one left, end round. If we are all square, flop, otherwise keep going
@@ -311,7 +320,7 @@ class PokerGame extends Rooms.botGame {
                 this.flop();
             } else {
                 // if the user folded and they were the ones who last bet, then we set userIDWhoLastBet to the new current player
-                if (this.users[user.userid].folded && user.userid == this.userIDWhoLastBet) {
+                if (folded && userid == this.userIDWhoLastBet) {
                     this.userIDWhoLastBet = this.currentPlayer;
                 }
                 this.initTurn();
@@ -525,15 +534,12 @@ class PokerGame extends Rooms.botGame {
     eliminate (userid) {
         userid = userid || this.currentPlayer;
         var name = this.users[userid].name;
+        let foundPlayer = this.searchForAndSetNextPlayer();
         //remove players
         delete this.users[userid];
         this.userList.splice(this.userList.indexOf(userid), 1);
         this.losersList.splice(0, 0, name);
-        if (!this.searchForAndSetNextPlayer()) {
-            this.onEnd();
-            return false;
-        }
-        return true;
+        this.continueGameWithFoundPlayer(userid, true, foundPlayer);
     }
     
     buildPlayerList () {
@@ -547,6 +553,7 @@ class PokerGame extends Rooms.botGame {
     		user.sendTo(player.name + ": " + player.chips + " chips.");
     	}
     }
+
 }
 
 class PokerGamePlayer extends Rooms.botGamePlayer {
@@ -558,6 +565,7 @@ class PokerGamePlayer extends Rooms.botGamePlayer {
         this.chips = startingChipCount;
         this.value = 0;
         this.handValue = [];
+        this.strikes = 0;
     }
     
     sendHand () {
