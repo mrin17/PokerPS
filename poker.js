@@ -68,7 +68,6 @@ class PokerGame extends Rooms.botGame {
 
     onJoin(user) {
         if (!this.allowJoins || this.state !== "signups") return;
-        if (this.userList.includes(user.userid)) return user.sendTo("You have already joined!");
         if (intendedUserNames.length === 0 && !usingIntendedNames) {
             super.onJoin(user);
             this.sendRoom(user.name + " has joined the game!");
@@ -82,7 +81,7 @@ class PokerGame extends Rooms.botGame {
                 return;
             }
         }
-        user.sendTo("You are not allowed in this game!");
+        user.sendTo("You are not allowed to join this game!");
     }
 
     onLeave(user) {
