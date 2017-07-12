@@ -209,7 +209,7 @@ class PokerGame extends Rooms.botGame {
                     player.folded = true;
                     this.sendRoom(player.name + " has taken too long and is disqualified!");
                     this.playersRemaining = this.playersRemaining - 1;
-                    this.eliminate();
+                    this.disqualify(this.currentPlayer);
                 }
             }, 90000);
         }
@@ -530,15 +530,18 @@ class PokerGame extends Rooms.botGame {
         this.destroy();
     }
 
-    eliminate (userid) {
-        userid = userid || this.currentPlayer;
-        var name = this.users[userid].name;
+    disqualify (userid) {
         let foundPlayer = this.searchForAndSetNextPlayer();
+        this.eliminate(userid);
+        this.continueGameWithFoundPlayer(userid, true, foundPlayer);
+    }
+
+    eliminate (userid) {
+        var name = this.users[userid].name;
         //remove players
         delete this.users[userid];
         this.userList.splice(this.userList.indexOf(userid), 1);
         this.losersList.splice(0, 0, name);
-        this.continueGameWithFoundPlayer(userid, true, foundPlayer);
     }
     
     buildPlayerList () {
