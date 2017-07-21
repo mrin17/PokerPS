@@ -29,10 +29,11 @@ const hands=["High Card", "1 Pair", "2 Pair", "3 of a Kind", "Straight",
 const handRankings=[7, 8, 4, 5, 0, 1, 2, 9, 3, 6];
 const defaultStartingChipCount = 50;
 const startingBuyIn = 1;
-const numTurnsToRaiseBlinds = 15;
+const numTurnsToRaiseBlinds = 10;
 const houseRakePerPlayerPerRound = 1;
 const strikesToBeOut = 3;
 let startingChipCount = defaultStartingChipCount;
+let startingTurnsToRaiseBlinds = numTurnsToRaiseBlinds;
 let intendedUserNames = [];
 let usingIntendedNames = false;
 
@@ -165,7 +166,7 @@ class PokerGame extends Rooms.botGame {
         this.setNextPlayer();
         var p2 = this.currentPlayer;
         this.nextSmallBlindPlayer = p2;
-        var blindMultiplier = parseInt(this.numTurnsPassed / numTurnsToRaiseBlinds) + 1;
+        var blindMultiplier = parseInt(this.numTurnsPassed / startingTurnsToRaiseBlinds) + 1;
         var blind = startingBuyIn * blindMultiplier;
         this.onBuyIn(this.users[p1], blind, p1);
         this.onBuyIn(this.users[p2], blind * 2, p2);
@@ -304,8 +305,9 @@ class PokerGame extends Rooms.botGame {
     
     onTurnEnd (user) {
         if (this.state !== "started" || (user && user.userid !== this.currentPlayer)) return false;
+        let player = this.users[user.userid];
         let successfulFind = this.searchForAndSetNextPlayer();
-        this.continueGameWithFoundPlayer(user.userid, user.folded, successfulFind);
+        this.continueGameWithFoundPlayer(user.userid, player.folded, successfulFind);
     }
 
     continueGameWithFoundPlayer(userid, folded, successfulFind) {
@@ -482,8 +484,8 @@ class PokerGame extends Rooms.botGame {
         this.checkForLosers();
 
         this.numTurnsPassed++;
-        if (this.numTurnsPassed % numTurnsToRaiseBlinds === 0) {
-        	this.sendRoom(numTurnsToRaiseBlinds + " turns have passed! Doubling blinds.");
+        if (this.numTurnsPassed % startingTurnsToRaiseBlinds === 0) {
+        	this.sendRoom(startingTurnsToRaiseBlinds + " turns have passed! Doubling blinds.");
         }
 
         if (this.userList.length == 1) {
@@ -746,19 +748,30 @@ exports.commands = {
         if (!room || !this.can("games")) return false;
         if(room.game) return this.send("There is already a game going on in this room! (" + room.game.gameName + ")");
         let args = target.split(',');
-        let amount = parseInt(args[0]);
+        let amount = defaultStartingChipCount;
+        if (args.length > 0) {
+            amount = parseInt(args[0]);
+        }
+        let blindTurns = numTurnsToRaiseBlinds;
+        if (args.length > 1) {
+            blindTurns = parseInt(args[1]);
+        }
         intendedUserNames = [];
-        for (var i = 1; i < args.length; i++) {
+        for (var i = 2; i < args.length; i++) {
             intendedUserNames.push(args[i].trim());
+        }
+        usingIntendedNames = intendedUserNames.length > 1;
+        if (isNaN(amount) || amount > 400 || amount <= 0) {
+            return this.send("You must provide a valid number for the amount of starting chips!");
+        }
+        if (isNaN(blindTurns) || blindTurns > 50 || blindTurns <= 0) {
+            return this.send("You must provide a valid number for the number of turns to double the blinds!");
         }
         if (intendedUserNames.length === 1) {
             return this.send("You can't have only one required player!");
         }
-        usingIntendedNames = intendedUserNames.length > 1;
-        if (isNaN(amount) || amount <= 0 || amount > 400) {
-            amount = defaultStartingChipCount;
-        }
         startingChipCount = amount;
+        startingTurnsToRaiseBlinds = blindTurns;
         room.game = new PokerGame(room);
     },
     fold: function (target, room, user) {
